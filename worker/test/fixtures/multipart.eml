@@ -1,0 +1,33 @@
+From: =?utf-8?b?5byg5LiJ?= <zhangsan@example.org>
+To: support@example.com
+Subject: =?utf-8?b?6K6i5Y2V5rKh5pS25Yiw?=
+Message-ID: <in1-abc@example.org>
+Date: Wed, 22 Oct 2026 08:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="B1"
+
+--B1
+Content-Type: multipart/alternative; boundary="B2"
+
+--B2
+Content-Type: text/plain; charset=utf-8
+
+我的订单 #12345 一直没收到，请帮忙查询。
+--B2
+Content-Type: text/html; charset=utf-8
+
+<p>我的订单 <b>#12345</b> 一直没收到</p><script>alert(1)</script><img src="https://tracker.example/p.gif"><img src="x" onerror="alert(2)">
+--B2--
+--B1
+Content-Type: application/pdf; name="invoice.pdf"
+Content-Disposition: attachment; filename="invoice.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKJcfsj6IKMSAwIG9iago8PD4+CmVuZG9iagp0cmFpbGVyCjw8Pj4KJSVFT0YK
+--B1
+Content-Type: application/x-msdownload; name="setup.exe"
+Content-Disposition: attachment; filename="setup.exe"
+Content-Transfer-Encoding: base64
+
+TVqQAAMAAAAEAAAA
+--B1--

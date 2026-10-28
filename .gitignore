@@ -1,0 +1,17 @@
+# Local-only
+research/
+webmail/
+.secrets/
+.env
+.dev.vars
+.wrangler/
+
+# Build / deps
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Instance-specific (real config + private notes); see worker/wrangler.example.jsonc
+worker/wrangler.jsonc
+worker/worker-configuration.d.ts
+private/
