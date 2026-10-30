@@ -75,6 +75,7 @@ export interface ThreadSummary {
   unread_count: number;
   status: "open" | "done";
   last_message_at: number;
+  deleted_at: number | null;
 }
 
 export interface Attachment {

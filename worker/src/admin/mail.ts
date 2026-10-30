@@ -5,6 +5,7 @@ import { normalizeSubject } from "../inbound/thread";
 import { CloudflareProvider } from "../send/provider";
 import { isEmail } from "../send/validate";
 import { audit, type AdminVars } from "./auth";
+import { purgeThreads } from "./purge";
 
 export const mail = new Hono<AdminVars>();
 
@@ -27,8 +28,8 @@ interface ThreadRow {
 mail.get("/mailboxes", async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT m.id, m.address, m.local_part, m.display_name, d.id AS domain_id, d.name AS domain,
-       (SELECT COUNT(*) FROM threads t WHERE t.mailbox_id = m.id AND t.status = 'open') AS open_count,
-       (SELECT COUNT(*) FROM threads t WHERE t.mailbox_id = m.id AND t.unread_count > 0) AS unread_count
+       (SELECT COUNT(*) FROM threads t WHERE t.mailbox_id = m.id AND t.status = 'open' AND t.deleted_at IS NULL) AS open_count,
+       (SELECT COUNT(*) FROM threads t WHERE t.mailbox_id = m.id AND t.unread_count > 0 AND t.deleted_at IS NULL) AS unread_count
      FROM mailboxes m JOIN domains d ON d.id = m.domain_id ORDER BY d.name, m.local_part`,
   ).all();
   return c.json({ mailboxes: results });
@@ -50,7 +51,7 @@ mail.get("/threads", async (c) => {
   const q = (c.req.query("q") ?? "").trim();
   const before = Number(c.req.query("before") ?? 0);
 
-  const where: string[] = [];
+  const where: string[] = [status === "trash" ? "t.deleted_at IS NOT NULL" : "t.deleted_at IS NULL"];
   const args: unknown[] = [];
   if (mailbox) {
     where.push("t.mailbox_id = ?");
@@ -85,7 +86,7 @@ mail.get("/threads", async (c) => {
     }
   }
   const sql = `SELECT t.id, t.mailbox_id, m.address AS mailbox_address, t.subject, t.counterpart, t.snippet, t.message_count,
-      t.unread_count, t.status, t.last_message_at
+      t.unread_count, t.status, t.last_message_at, t.deleted_at
     FROM threads t JOIN mailboxes m ON m.id = t.mailbox_id
     ${where.length ? "WHERE " + where.join(" AND ") : ""}
     ORDER BY t.last_message_at DESC LIMIT ${PAGE + 1}`;
@@ -152,6 +153,53 @@ mail.post("/threads/:id/status", async (c) => {
   await c.env.DB.prepare("UPDATE threads SET status = ? WHERE id = ?").bind(status, id).run();
   await audit(c.env.DB, c.get("admin"), "thread.status", id, { status });
   return c.json({ ok: true });
+});
+
+// Bulk actions from the inbox list. Delete = move to Trash; purge = delete forever
+// (only for threads already in Trash).
+const BULK_ACTIONS = ["delete", "restore", "read", "unread", "purge"] as const;
+
+mail.post("/threads/bulk", async (c) => {
+  const { ids, action } = await c.req.json<{ ids: string[]; action: (typeof BULK_ACTIONS)[number] }>();
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 || !ids.every((i) => typeof i === "string")) {
+    return c.json({ error: "ids must be 1-500 thread ids" }, 400);
+  }
+  if (!BULK_ACTIONS.includes(action)) return c.json({ error: `action must be one of ${BULK_ACTIONS.join(", ")}` }, 400);
+  const db = c.env.DB;
+  const now = Math.floor(Date.now() / 1000);
+  let affected = 0;
+  if (action === "purge") {
+    affected = await purgeThreads(c.env, ids);
+  } else {
+    for (let i = 0; i < ids.length; i += 90) {
+      const chunk = ids.slice(i, i + 90);
+      const m = chunk.map(() => "?").join(",");
+      if (action === "delete") {
+        affected += (await db.prepare(`UPDATE threads SET deleted_at = ? WHERE id IN (${m}) AND deleted_at IS NULL`).bind(now, ...chunk).run()).meta.changes;
+      } else if (action === "restore") {
+        affected += (await db.prepare(`UPDATE threads SET deleted_at = NULL WHERE id IN (${m}) AND deleted_at IS NOT NULL`).bind(...chunk).run()).meta.changes;
+      } else if (action === "read") {
+        const [, r] = await db.batch([
+          db.prepare(`UPDATE messages SET read_at = COALESCE(read_at, ?) WHERE thread_id IN (${m})`).bind(now, ...chunk),
+          db.prepare(`UPDATE threads SET unread_count = 0 WHERE id IN (${m})`).bind(...chunk),
+        ]);
+        affected += r.meta.changes;
+      } else {
+        affected += (await db.prepare(`UPDATE threads SET unread_count = MAX(unread_count, 1) WHERE id IN (${m})`).bind(...chunk).run()).meta.changes;
+      }
+    }
+  }
+  if (action === "delete" || action === "restore" || action === "purge") {
+    await audit(db, c.get("admin"), `thread.${action}`, null, { count: affected, ids: ids.slice(0, 50) });
+  }
+  return c.json({ ok: true, affected });
+});
+
+mail.post("/trash/empty", async (c) => {
+  const { results } = await c.env.DB.prepare("SELECT id FROM threads WHERE deleted_at IS NOT NULL").all<{ id: string }>();
+  const affected = await purgeThreads(c.env, results.map((r) => r.id));
+  await audit(c.env.DB, c.get("admin"), "trash.empty", null, { count: affected });
+  return c.json({ ok: true, affected });
 });
 
 // HTML body as a standalone document. Served with a CSP sandbox (opaque origin,

@@ -47,6 +47,7 @@ send_email binding → Cloudflare Email Sending
   - The HTML body is served as a standalone document with `Content-Security-Policy: sandbox` and rendered in a `sandbox` iframe with neither `allow-scripts` nor `allow-same-origin`.
   - Remote images are blocked until you click to load them, and `cid:` images are inlined as `data:` URIs.
   - Attachments are always downloads (`application/octet-stream`, `nosniff`), and executables need confirmation.
+- **Deletion.** Deleting moves a conversation to Trash (`threads.deleted_at`). Trashed conversations are hidden from the read API. A new inbound message moves a conversation back to the inbox. *Delete forever*, *Empty trash*, and a daily cron (30-day retention) purge the D1 rows and the R2 objects (raw `.eml`, HTML, attachments).
 - **CSRF.** Admin mutations require `Content-Type: application/json` and a same-origin `Origin`.
 - **No Cloudflare API token in the Worker.** Per-domain Cloudflare setup (Email Sending, Email Routing, routing rules) runs locally via `scripts/onboard-domain.mjs` using your wrangler login.
 

@@ -3,7 +3,7 @@
 Self-hosted email for people who run many small websites, built entirely on Cloudflare.
 
 - **Transactional send API.** Each website gets its own API key and can only send from its own allow-listed addresses (`no-reply@site-a.com`). Templates, idempotency keys, rate limits, daily quotas, and a send log are included.
-- **One inbox for every domain.** Mail to `support@site-a.com`, `billing@site-b.com`, … lands in a single admin UI. You can search it, read it with safe HTML rendering, download attachments, and reply. Replies always go out from the address the customer wrote to, and threading is preserved.
+- **One inbox for every domain.** Mail to `support@site-a.com`, `billing@site-b.com`, … lands in a single admin UI. You can search it, read it with safe HTML rendering, download attachments, reply, and bulk-select conversations to mark read/unread or move them to Trash. Trash is purged after 30 days. Replies always go out from the address the customer wrote to, and threading is preserved.
 - **Read API for AI agents.** Scoped read-only tokens let a scheduled agent fetch the last day's mail and summarize it.
 - **Agent-ready docs.** `/api/v1/llms.txt` (sending) and `/api/v1/llms-mail.txt` (reading) are written for coding agents and are served by your deployment with your hostname filled in.
 

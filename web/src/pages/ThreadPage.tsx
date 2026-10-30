@@ -1,6 +1,7 @@
 import { ActionIcon, Badge, Button, Card, Center, Group, Loader, Stack, TagsInput, Text, Title } from "@mantine/core";
+import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
-import { IconArrowLeft, IconMail, IconSend } from "@tabler/icons-react";
+import { IconArrowBackUp, IconArrowLeft, IconMail, IconSend, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
@@ -23,6 +24,17 @@ export default function ThreadPage() {
     qc.invalidateQueries({ queryKey: ["threads"] });
     qc.invalidateQueries({ queryKey: ["mailboxes"] });
   };
+
+  const bulk = useMutation({
+    mutationFn: (action: "delete" | "restore" | "purge") => api(`/threads/bulk`, { body: { ids: [threadId], action } }),
+    onSuccess: (_r, action) => {
+      refreshLists();
+      if (action === "restore") qc.invalidateQueries({ queryKey: ["thread", threadId] });
+      else navigate(-1);
+      notifications.show({ message: action === "delete" ? "Moved to Trash" : action === "restore" ? "Restored" : "Deleted forever" });
+    },
+    onError: (e: Error) => notifications.show({ color: "red", title: "Action failed", message: e.message }),
+  });
 
   const markRead = useMutation({
     mutationFn: (read: boolean) => api(`/threads/${threadId}/read`, { body: { read } }),
@@ -75,6 +87,11 @@ export default function ThreadPage() {
               <Badge variant="light" color="gray">
                 {thread.mailbox_address}
               </Badge>
+              {thread.deleted_at && (
+                <Badge variant="light" color="red">
+                  In Trash
+                </Badge>
+              )}
             </Group>
           </Stack>
         </Group>
@@ -82,6 +99,33 @@ export default function ThreadPage() {
           <Button size="xs" variant="default" leftSection={<IconMail size={14} />} onClick={() => markRead.mutate(false)}>
             Mark unread
           </Button>
+          {thread.deleted_at ? (
+            <>
+              <Button size="xs" variant="default" leftSection={<IconArrowBackUp size={14} />} loading={bulk.isPending} onClick={() => bulk.mutate("restore")}>
+                Restore
+              </Button>
+              <Button
+                size="xs"
+                color="red"
+                variant="light"
+                onClick={() =>
+                  modals.openConfirmModal({
+                    title: "Delete forever?",
+                    children: <Text size="sm">This permanently deletes the conversation, its original emails and attachments.</Text>,
+                    labels: { confirm: "Delete forever", cancel: "Cancel" },
+                    confirmProps: { color: "red" },
+                    onConfirm: () => bulk.mutate("purge"),
+                  })
+                }
+              >
+                Delete forever
+              </Button>
+            </>
+          ) : (
+            <Button size="xs" color="red" variant="light" leftSection={<IconTrash size={14} />} loading={bulk.isPending} onClick={() => bulk.mutate("delete")}>
+              Delete
+            </Button>
+          )}
         </Group>
       </Group>
 

@@ -110,11 +110,11 @@ export async function storeInbound(env: Env, mailbox: MailboxRow, raw: ArrayBuff
       ).bind(attId, id, a.filename, a.contentType, a.bytes.byteLength, a.contentId ?? null, a.disposition, a.isExecutable ? 1 : 0, key),
     );
   }
-  // New inbound mail reopens the thread and bumps it to the top. Ordering uses
+  // New inbound mail reopens the thread (also out of Trash) and bumps it to the top. Ordering uses
   // receipt time, not the sender-controlled Date header.
   stmts.push(
     env.DB.prepare(
-      `UPDATE threads SET message_count = message_count + 1, unread_count = unread_count + 1, status = 'open',
+      `UPDATE threads SET message_count = message_count + 1, unread_count = unread_count + 1, status = 'open', deleted_at = NULL,
          snippet = ?, counterpart = COALESCE(?, counterpart), last_message_at = MAX(last_message_at, ?) WHERE id = ?`,
     ).bind(parsed.snippet, counterpart, now, threadId),
   );

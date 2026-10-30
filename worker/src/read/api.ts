@@ -147,7 +147,8 @@ readApi.get("/messages", async (c) => {
   const maxChars = Math.min(Math.max(Number(c.req.query("max_chars") ?? 20000) || 20000, 200), 100000);
   const cursor = Number(c.req.query("cursor") ?? 0) || 0;
 
-  const where: string[] = ["msg.rowid > ?"];
+  // Trashed conversations are hidden from machine readers.
+  const where: string[] = ["msg.rowid > ?", "msg.thread_id IN (SELECT id FROM threads WHERE deleted_at IS NULL)"];
   const args: unknown[] = [cursor];
   // Default window: last 24 hours.
   where.push("msg.created_at >= ?");
@@ -192,7 +193,8 @@ readApi.get("/threads/:id", async (c) => {
   const scope = domainScope(c.get("domains"), "mb");
   const thread = await c.env.DB.prepare(
     `SELECT t.id, t.subject, t.counterpart, t.message_count, t.last_message_at, mb.address AS mailbox, d.name AS domain
-     FROM threads t JOIN mailboxes mb ON mb.id = t.mailbox_id JOIN domains d ON d.id = mb.domain_id WHERE t.id = ?${scope.sql}`,
+     FROM threads t JOIN mailboxes mb ON mb.id = t.mailbox_id JOIN domains d ON d.id = mb.domain_id
+     WHERE t.id = ? AND t.deleted_at IS NULL${scope.sql}`,
   )
     .bind(c.req.param("id"), ...scope.args)
     .first<{ id: string; subject: string; counterpart: string | null; message_count: number; last_message_at: number; mailbox: string; domain: string }>();

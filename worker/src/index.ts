@@ -3,6 +3,7 @@ import { requireAdmin, type AdminVars } from "./admin/auth";
 import { config } from "./admin/config";
 import { mail } from "./admin/mail";
 import type { Env } from "./env";
+import { purgeExpiredTrash } from "./admin/purge";
 import { handleEmail } from "./inbound/store";
 import { readApi } from "./read/api";
 import { sendApi } from "./send/api";
@@ -50,4 +51,9 @@ export default {
     return env.ASSETS.fetch(req);
   },
   email: handleEmail,
+  // Daily: permanently delete threads that have been in Trash for 30+ days.
+  async scheduled(_event, env) {
+    const n = await purgeExpiredTrash(env);
+    if (n) console.log(JSON.stringify({ evt: "trash_purge", threads: n }));
+  },
 } satisfies ExportedHandler<Env>;
