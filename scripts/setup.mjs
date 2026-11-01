@@ -123,5 +123,5 @@ if (noDeploy) {
 console.log(`
 Done. Next:
   • Open https://${v.hostname} (Cloudflare Access login) — you should land in the inbox.
-  • Onboard a domain:  node scripts/onboard-domain.mjs example.com --site example --site-name Example
-  • Give your website / AI agent: https://${v.hostname}/api/v1/llms.txt (send) and /api/v1/llms-mail.txt (read)`);
+  • Onboard a domain:  node scripts/onboard-domain.mjs example.com --mailboxes hello --display-name Example
+  • Give your website / AI agent: https://${v.hostname}/api/v1/llms.txt (sending, reading and summaries)`);

@@ -10,6 +10,8 @@ export function isEmail(s: unknown): s is string {
 export interface SendRequest {
   to: string;
   from?: string;
+  domain?: string;
+  site_id?: string;
   reply_to?: string;
   template?: string;
   variables: Vars;
@@ -30,6 +32,14 @@ export function parseSendRequest(body: unknown, headerIdemKey: string | null): P
   if (!isEmail(b.to)) return { ok: false, error: "`to` must be a single email address" };
   for (const f of ["from", "reply_to"] as const) {
     if (b[f] !== undefined && !isEmail(b[f])) return { ok: false, error: `\`${f}\` must be an email address` };
+  }
+
+  if (b.site_id !== undefined && (typeof b.site_id !== "string" || !/^[a-z0-9-]{2,40}$/.test(b.site_id))) {
+    return { ok: false, error: "`site_id` must match [a-z0-9-]{2,40}" };
+  }
+
+  if (b.domain !== undefined && (typeof b.domain !== "string" || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(b.domain))) {
+    return { ok: false, error: "`domain` must be a domain name" };
   }
 
   const hasTemplate = b.template !== undefined;
@@ -72,6 +82,8 @@ export function parseSendRequest(body: unknown, headerIdemKey: string | null): P
       from: (b.from as string | undefined)?.toLowerCase(),
       reply_to: b.reply_to as string | undefined,
       template: b.template as string | undefined,
+      domain: (b.domain as string | undefined)?.toLowerCase(),
+      site_id: b.site_id as string | undefined,
       variables,
       subject: b.subject as string | undefined,
       html: b.html as string | undefined,

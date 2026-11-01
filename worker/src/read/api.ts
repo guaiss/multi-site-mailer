@@ -1,13 +1,8 @@
 // Read-only mail API for machines (AI summaries, exports), mounted at /api/v1/mail and
-// authenticated with `Authorization: Bearer mr_…` read tokens.
+// authenticated with `Authorization: Bearer <token>` and domain read grants.
 import { Hono } from "hono";
 import type { Env } from "../env";
-import { sha256Hex } from "../lib/crypto";
-
-interface Token {
-  id: string;
-  allowed_domains: string | null;
-}
+import { authenticateToken, domainsFor } from "../tokens/auth";
 
 type ReadVars = { Bindings: Env; Variables: { domains: string[] | null } };
 
@@ -16,12 +11,10 @@ export const readApi = new Hono<ReadVars>();
 const err = (code: string, message: string) => ({ error: { code, message } });
 
 readApi.use("*", async (c, next) => {
-  const m = /^Bearer\s+(mr_[A-Za-z0-9_-]{20,})$/.exec(c.req.header("authorization") ?? "");
-  if (!m) return c.json(err("unauthorized", "invalid or missing read token"), 401);
-  const token = await c.env.DB.prepare("SELECT id, allowed_domains FROM read_tokens WHERE key_hash = ? AND revoked_at IS NULL")
-    .bind(await sha256Hex(m[1]))
-    .first<Token>();
-  if (!token) return c.json(err("unauthorized", "invalid or missing read token"), 401);
+  const token = await authenticateToken(c.req.raw, c.env.DB);
+  if (!token) return c.json(err("unauthorized", "invalid or missing token"), 401);
+  const domains = domainsFor(token, "read");
+  if (domains?.length === 0) return c.json(err("forbidden", "token has no read permission"), 403);
 
   let allowed = false;
   try {
@@ -31,8 +24,8 @@ readApi.use("*", async (c, next) => {
   }
   if (!allowed) return c.json(err("rate_limited", "too many requests"), 429, { "retry-after": "60" });
 
-  c.executionCtx.waitUntil(c.env.DB.prepare("UPDATE read_tokens SET last_used_at = datetime('now') WHERE id = ?").bind(token.id).run());
-  c.set("domains", token.allowed_domains ? (JSON.parse(token.allowed_domains) as string[]) : null);
+  c.executionCtx.waitUntil(c.env.DB.prepare("UPDATE tokens SET last_used_at = datetime('now') WHERE id = ?").bind(token.id).run());
+  c.set("domains", domains);
   await next();
 });
 
@@ -45,7 +38,7 @@ readApi.onError((e, c) => {
 function domainScope(domains: string[] | null, alias: string): { sql: string; args: string[] } {
   if (!domains) return { sql: "", args: [] };
   if (domains.length === 0) return { sql: " AND 0", args: [] };
-  return { sql: ` AND ${alias}.domain_id IN (${domains.map(() => "?").join(",")})`, args: domains };
+  return { sql: ` AND ${alias}.domain_id IN (SELECT value FROM json_each(?))`, args: [JSON.stringify(domains)] };
 }
 
 // Accepts unix seconds, ISO 8601, or a relative duration like "24h" / "7d" / "90m".

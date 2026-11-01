@@ -3,11 +3,12 @@ import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
 import { IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router";
 import { useEffect, useState } from "react";
-import { api, type SitesResponse, type Template } from "../api";
+import { api, type Domain, type Template } from "../api";
 
 interface Draft {
-  site_id: string;
+  domain_id: string;
   name: string;
   subject: string;
   html: string;
@@ -15,12 +16,14 @@ interface Draft {
   isNew: boolean;
 }
 
-const empty: Draft = { site_id: "*", name: "", subject: "", html: "", text: "", isNew: true };
+const empty: Draft = { domain_id: "*", name: "", subject: "", html: "", text: "", isNew: true };
 
 export default function TemplatesPage() {
   const qc = useQueryClient();
   const list = useQuery({ queryKey: ["templates"], queryFn: () => api<{ templates: Template[] }>("/templates") });
-  const sites = useQuery({ queryKey: ["sites"], queryFn: () => api<SitesResponse>("/sites") });
+  const domains = useQuery({ queryKey: ["domains"], queryFn: () => api<{ domains: Domain[] }>("/domains") });
+  const [params] = useSearchParams();
+  const selectedDomain = params.get("domain");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [vars, setVars] = useState('{\n  "code": "123456",\n  "expires_minutes": 5\n}');
   const [preview, setPreview] = useState<{ subject: string; html: string | null; text: string | null } | null>(null);
@@ -28,13 +31,14 @@ export default function TemplatesPage() {
 
   useEffect(() => {
     if (!draft && list.data?.templates[0]) {
-      const t = list.data.templates[0];
+      const t = list.data.templates.find((t) => !selectedDomain || t.domain_id === selectedDomain) ?? list.data.templates.find((t) => t.domain_id === "*")!;
+      if (!t) return;
       setDraft({ ...t, html: t.html ?? "", text: t.text ?? "", isNew: false });
     }
-  }, [list.data, draft]);
+  }, [list.data, draft, selectedDomain]);
 
   const save = useMutation({
-    mutationFn: (d: Draft) => api(`/templates/${encodeURIComponent(d.site_id)}/${d.name}`, { method: "PUT", body: { subject: d.subject, html: d.html, text: d.text } }),
+    mutationFn: (d: Draft) => api(`/templates/${encodeURIComponent(d.domain_id)}/${d.name}`, { method: "PUT", body: { subject: d.subject, html: d.html, text: d.text } }),
     onSuccess: () => {
       notifications.show({ color: "green", message: "Saved" });
       qc.invalidateQueries({ queryKey: ["templates"] });
@@ -43,7 +47,7 @@ export default function TemplatesPage() {
     onError: (e) => notifications.show({ color: "red", title: "Save failed", message: e.message }),
   });
   const del = useMutation({
-    mutationFn: (d: Draft) => api(`/templates/${encodeURIComponent(d.site_id)}/${d.name}`, { method: "DELETE" }),
+    mutationFn: (d: Draft) => api(`/templates/${encodeURIComponent(d.domain_id)}/${d.name}`, { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["templates"] });
       setDraft(null);
@@ -72,32 +76,32 @@ export default function TemplatesPage() {
   });
 
   const grouped = new Map<string, Template[]>();
-  for (const t of list.data?.templates ?? []) grouped.set(t.site_id, [...(grouped.get(t.site_id) ?? []), t]);
-  const siteOptions = [{ value: "*", label: "Shared (all sites)" }, ...(sites.data?.sites ?? []).map((s) => ({ value: s.id, label: `${s.name} (${s.id})` }))];
-  const siteLabel = (id: string) => siteOptions.find((o) => o.value === id)?.label ?? id;
+  for (const t of (list.data?.templates ?? []).filter((t) => !selectedDomain || t.domain_id === selectedDomain || t.domain_id === "*")) grouped.set(t.domain_id, [...(grouped.get(t.domain_id) ?? []), t]);
+  const domainOptions = [{ value: "*", label: "Shared (all domains)" }, ...(domains.data?.domains ?? []).map((d) => ({ value: d.id, label: d.name }))];
+  const domainLabel = (id: string) => domainOptions.find((o) => o.value === id)?.label ?? id;
   const set = (patch: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...patch } : d));
 
   return (
     <Stack>
       <Group justify="space-between">
         <Title order={3}>Templates</Title>
-        <Button leftSection={<IconPlus size={16} />} onClick={() => setDraft({ ...empty })}>
+        <Button leftSection={<IconPlus size={16} />} onClick={() => setDraft({ ...empty, domain_id: selectedDomain ?? "*" })}>
           New template
         </Button>
       </Group>
       <Alert variant="light">
-        Variables are written as <Code>{"{{name}}"}</Code> and values are HTML-escaped automatically; <Code>{"{{site_name}}"}</Code> is filled with the site name. A site-specific template overrides a shared template with the same name.
+        Variables are written as <Code>{"{{name}}"}</Code> and values are HTML-escaped automatically; <Code>{"{{site_name}}"}</Code> is filled with the domain display name; <Code>{"{{domain_name}}"}</Code> contains the domain. A domain template overrides a shared template with the same name.
       </Alert>
       <Grid>
         <Grid.Col span={{ base: 12, md: 3 }}>
           <Paper withBorder p="xs">
             {[...grouped.entries()].map(([site, ts]) => (
-              <NavLink key={site} label={siteLabel(site)} defaultOpened childrenOffset={12}>
+              <NavLink key={site} label={domainLabel(site)} defaultOpened childrenOffset={12}>
                 {ts.map((t) => (
                   <NavLink
                     key={t.name}
                     label={t.name}
-                    active={draft?.site_id === t.site_id && draft?.name === t.name && !draft.isNew}
+                    active={draft?.domain_id === t.domain_id && draft?.name === t.name && !draft.isNew}
                     onClick={() => {
                       setDraft({ ...t, html: t.html ?? "", text: t.text ?? "", isNew: false });
                       setPreview(null);
@@ -112,7 +116,7 @@ export default function TemplatesPage() {
           {draft && (
             <Stack>
               <Group grow>
-                <Select label="Site" data={siteOptions} value={draft.site_id} onChange={(v) => set({ site_id: v ?? "*" })} disabled={!draft.isNew} />
+                <Select label="Domain" data={domainOptions} value={draft.domain_id} onChange={(v) => set({ domain_id: v ?? "*" })} disabled={!draft.isNew} />
                 <TextInput label="Template name" description="[a-z0-9_]" value={draft.name} onChange={(e) => set({ name: e.currentTarget.value })} disabled={!draft.isNew} />
               </Group>
               <TextInput label="Subject" value={draft.subject} onChange={(e) => set({ subject: e.currentTarget.value })} />

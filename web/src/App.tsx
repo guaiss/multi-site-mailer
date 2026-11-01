@@ -19,7 +19,6 @@ import { useDisclosure } from "@mantine/hooks";
 import {
   IconHistory,
   IconInbox,
-  IconKey,
   IconLock,
   IconListDetails,
   IconMoon,
@@ -35,13 +34,11 @@ import AuditPage from "./pages/AuditPage";
 import DomainsPage from "./pages/DomainsPage";
 import InboxPage from "./pages/InboxPage";
 import LogsPage from "./pages/LogsPage";
-import SitesPage from "./pages/SitesPage";
 import TokensPage from "./pages/TokensPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import ThreadPage from "./pages/ThreadPage";
 
 const NAV = [
-  { to: "/sites", label: "Sites & keys", icon: IconKey },
   { to: "/tokens", label: "API tokens", icon: IconLock },
   { to: "/templates", label: "Templates", icon: IconTemplate },
   { to: "/domains", label: "Domains", icon: IconWorld },
@@ -131,7 +128,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/inbox" replace />} />
           <Route path="/inbox" element={<InboxPage />} />
           <Route path="/inbox/t/:threadId" element={<ThreadPage />} />
-          <Route path="/sites" element={<SitesPage />} />
+          <Route path="/sites" element={<Navigate to="/domains" replace />} />
           <Route path="/tokens" element={<TokensPage />} />
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/domains" element={<DomainsPage />} />

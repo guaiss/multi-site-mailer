@@ -31,8 +31,11 @@ export class CloudflareProvider implements Provider {
 
   async send(msg: OutboundMessage): Promise<ProviderResult> {
     try {
+      // The binding requires name: string on an EmailAddress object. Use the
+      // supported plain-address form when the sender has no display name.
+      const from = msg.from.name ? { email: msg.from.email, name: msg.from.name } : msg.from.email;
       const res = (await this.binding.send({
-        from: msg.from,
+        from,
         to: msg.to,
         subject: msg.subject,
         ...(msg.html !== undefined ? { html: msg.html } : {}),
@@ -41,7 +44,7 @@ export class CloudflareProvider implements Provider {
         ...(msg.cc?.length ? { cc: msg.cc } : {}),
         ...(msg.headers && Object.keys(msg.headers).length ? { headers: msg.headers } : {}),
         ...(msg.attachments?.length ? { attachments: msg.attachments } : {}),
-      } as never)) as { messageId?: string } | undefined;
+      }));
       return { ok: true, messageId: res?.messageId ?? null };
     } catch (e) {
       const err = e as { code?: string; message?: string };

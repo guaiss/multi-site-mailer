@@ -1,15 +1,14 @@
 #!/usr/bin/env node
 // Onboards one domain end to end. Idempotent: safe to re-run.
 //
-//   node scripts/onboard-domain.mjs <domain> [--mailboxes support,billing] [--site <site_id> --site-name <name>] [--dry-run]
+//   node scripts/onboard-domain.mjs <domain> [--mailboxes <names>] [--display-name <name>] [--dry-run]
 //
 // Steps:
 //   1. Email Sending enable  (Cloudflare adds cf-bounce MX/SPF, DKIM, _dmarc)
 //   2. Email Routing enable  (Cloudflare adds apex MX + SPF)
 //   3. Routing rule per mailbox: <local>@<domain> -> Worker "mailer"
 //   4. Register domain + mailboxes in D1 (shows up in the admin UI)
-//   5. Optional: create a sending site with no-reply@<domain> as default sender
-//      (create its API key in the admin UI afterwards)
+//   5. Optional: set the domain display name (senders and tokens are managed in the UI)
 //   6. Verify DNS over DoH
 //
 // Worker and D1 names come from worker/wrangler.jsonc.
@@ -37,17 +36,18 @@ const flag = (name) => {
   return i >= 0;
 };
 const dryRun = flag("--dry-run");
-const mailboxes = opt("--mailboxes", "support,billing").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-const siteId = opt("--site");
-const siteName = opt("--site-name");
+const mailboxArg = opt("--mailboxes");
+let mailboxes = mailboxArg === undefined ? null : mailboxArg.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+const legacySite = opt("--site");
+const displayName = opt("--display-name") ?? opt("--site-name");
 const domain = (argv[0] ?? "").toLowerCase();
 
 if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(domain)) {
-  console.error("usage: node scripts/onboard-domain.mjs <domain> [--mailboxes support,billing] [--site id --site-name Name] [--dry-run]");
+  console.error("usage: node scripts/onboard-domain.mjs <domain> [--mailboxes <names>] [--display-name Name] [--dry-run]");
   process.exit(1);
 }
-if (!mailboxes.every((m) => /^[a-z0-9][a-z0-9._+-]{0,63}$/.test(m))) throw new Error("invalid mailbox name");
-if (siteId && !/^[a-z0-9-]{2,40}$/.test(siteId)) throw new Error("site id must match [a-z0-9-]{2,40}");
+if (mailboxes && !mailboxes.every((m) => /^[a-z0-9][a-z0-9._+-]{0,63}$/.test(m))) throw new Error("invalid mailbox name");
+if (legacySite) console.log("--site is obsolete: sending settings now belong to the domain; no sender addresses are created automatically.");
 
 const step = (s) => console.log(`\n▸ ${s}`);
 const ok = (s) => console.log(`  ✓ ${s}`);
@@ -70,12 +70,12 @@ function wrangler(args, { allowFail = false, read = false } = {}) {
 }
 
 const q = (v) => (v === null || v === undefined ? "NULL" : `'${String(v).replace(/'/g, "''")}'`);
-function d1(sql) {
-  if (dryRun) {
+function d1(sql, { read = false } = {}) {
+  if (dryRun && !read) {
     console.log(`  [dry-run] d1: ${sql.slice(0, 120)}…`);
     return [];
   }
-  const out = wrangler(["d1", "execute", D1_NAME, "--remote", "--json", "--command", sql]);
+  const out = wrangler(["d1", "execute", D1_NAME, "--remote", "--json", "--command", sql], { read });
   return JSON.parse(out).flatMap((r) => r.results ?? []);
 }
 
@@ -86,6 +86,13 @@ async function doh(name, type) {
 }
 
 const enabled = (out) => /Enabled:\s+true/i.test(out);
+
+// Omitting --mailboxes uses the names already configured in the app. Never
+// invent addresses: onboarding must match the user's mailbox configuration.
+if (mailboxes === null) {
+  mailboxes = d1(`SELECT m.local_part FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE d.name=${q(domain)} ORDER BY m.local_part`, { read: true }).map((m) => m.local_part);
+}
+console.log(`Receiving mailboxes: ${mailboxes.length ? mailboxes.map((m) => `${m}@${domain}`).join(", ") : "none configured"}`);
 
 step(`Email Sending: ${domain}`);
 if (enabled(wrangler(["email", "sending", "settings", domain], { allowFail: true, read: true }))) ok("already enabled");
@@ -146,14 +153,8 @@ for (const local of mailboxes) {
 }
 ok(`domain + ${mailboxes.length} mailbox(es)`);
 
-if (siteId) {
-  step(`Sending site ${siteId}`);
-  d1(`INSERT OR IGNORE INTO sites (id, name) VALUES (${q(siteId)}, ${q(siteName ?? siteId)})`);
-  d1(
-    `INSERT OR IGNORE INTO site_senders (site_id, address, display_name, is_default) VALUES (${q(siteId)}, ${q(`no-reply@${domain}`)}, ${q(siteName ?? null)}, 1)`,
-  );
-  ok(`site ${siteId}, default sender no-reply@${domain} — get its API key at https://${HOSTNAME}/sites`);
-}
+if (displayName) d1(`UPDATE domains SET display_name=${q(displayName)} WHERE id=${q(domainId)}`);
+ok(`configure allowed senders under https://${HOSTNAME}/domains and tokens under https://${HOSTNAME}/tokens`);
 
 step("DNS check (DoH)");
 const checks = [

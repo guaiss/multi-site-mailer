@@ -120,41 +120,26 @@ export interface OutAttachment {
   content: string;
 }
 
-export interface Site {
-  id: string;
-  name: string;
-  status: "active" | "disabled";
-  daily_quota: number;
-  created_at: string;
-}
 export interface Sender {
-  site_id: string;
+  domain_id: string;
   address: string;
   display_name: string | null;
   is_default: number;
 }
-export interface ApiKey {
-  id: string;
-  site_id: string;
-  key_prefix: string;
-  key_plain: string | null;
-  created_at: string;
-  revoked_at: string | null;
-}
-export interface SitesResponse {
-  sites: Site[];
-  senders: Sender[];
-  keys: ApiKey[];
-  usage_today: { site_id: string; sent: number; failed: number }[];
-}
 export interface Domain {
+  display_name: string | null;
+  status: "active" | "disabled";
+  daily_quota: number;
+  sent_today: number;
+  failed_today: number;
+  senders: Sender[];
   id: string;
   name: string;
   created_at: number;
   mailbox_count: number;
 }
 export interface Template {
-  site_id: string;
+  domain_id: string;
   name: string;
   subject: string;
   html: string | null;

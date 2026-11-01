@@ -12,7 +12,7 @@
   // Daily purge of threads that have been in Trash for 30+ days.
   "triggers": { "crons": ["17 3 * * *"] },
 
-  // docs/ai-*.md are bundled and served at /api/v1/llms.txt and /api/v1/llms-mail.txt.
+  // The unified docs/ai-integration.md guide is served at /api/v1/llms.txt (legacy alias: llms-mail.txt).
   "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }],
 
   // One hostname for everything: admin UI + /api/admin (behind Cloudflare Access)

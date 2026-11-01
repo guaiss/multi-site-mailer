@@ -8,7 +8,6 @@ import { handleEmail } from "./inbound/store";
 import { readApi } from "./read/api";
 import { sendApi } from "./send/api";
 import aiGuide from "../../docs/ai-integration.md";
-import aiMailGuide from "../../docs/ai-mail-read.md";
 
 // Admin API for the UI: Cloudflare Access JWT + ADMIN_EMAILS.
 const admin = new Hono<AdminVars>();
@@ -21,9 +20,9 @@ admin.onError((e, c) => {
   return c.json({ error: "internal error" }, 500);
 });
 
-// Public machine API (site send keys / read tokens). Cloudflare Access bypasses
+// Public machine API (unified domain/action tokens). Cloudflare Access bypasses
 // /api/v1 so websites and agents can call it without a browser login.
-// The guides use {{BASE_URL}}; fill in this deployment's origin when serving them.
+// The guide uses {{BASE_URL}}; fill in this deployment's origin when serving them.
 const markdown = (body: string, req: Request) =>
   new Response(body.replaceAll("{{BASE_URL}}", new URL(req.url).origin), {
     headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "public, max-age=300" },
@@ -35,7 +34,8 @@ v1.get("/healthz", (c) => c.json({ ok: true }));
 v1.all("/send", (c) => sendApi(c.req.raw, c.env));
 v1.route("/mail", readApi);
 v1.get("/llms.txt", (c) => markdown(aiGuide, c.req.raw));
-v1.get("/llms-mail.txt", (c) => markdown(aiMailGuide, c.req.raw));
+// Compatibility alias for agents with the former reading-guide URL.
+v1.get("/llms-mail.txt", (c) => markdown(aiGuide, c.req.raw));
 v1.all("*", (c) => c.json(notFound, 404));
 
 const app = new Hono<{ Bindings: Env }>();

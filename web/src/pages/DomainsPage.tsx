@@ -1,4 +1,4 @@
-import { ActionIcon, Alert, Button, Checkbox, Code, CopyButton, Group, Loader, Modal, Stack, Table, TagsInput, Text, TextInput, Title, Tooltip } from "@mantine/core";
+import { ActionIcon, Alert, Badge, Button, Checkbox, Code, CopyButton, Group, Loader, Modal, Stack, Table, TagsInput, Text, TextInput, Title, Tooltip } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { modals } from "@mantine/modals";
 import { notifications } from "@mantine/notifications";
@@ -6,6 +6,7 @@ import { IconCheck, IconCopy, IconEdit, IconPlus, IconTrash } from "@tabler/icon
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { api, type Domain, type Mailbox } from "../api";
+import DomainSendingDrawer from "../components/DomainSendingDrawer";
 import { useMailboxes } from "../components/MailboxNav";
 
 interface DomainCheck {
@@ -93,9 +94,11 @@ export default function DomainsPage() {
     qc.invalidateQueries({ queryKey: ["mailboxes"] });
   };
 
+  const [sendingId, setSendingId] = useState<string | null>(null);
+  const sendingDomain = domains.data?.domains.find((d) => d.id === sendingId);
   const [addOpen, setAddOpen] = useState(false);
   const [name, setName] = useState("");
-  const [locals, setLocals] = useState<string[]>(["support", "billing"]);
+  const [locals, setLocals] = useState<string[]>([]);
   const [created, setCreated] = useState<string | null>(null);
   const [blocking, setBlocking] = useState(true);
   const onBlocking = useCallback((b: boolean) => setBlocking(b), []);
@@ -112,6 +115,7 @@ export default function DomainsPage() {
       setCreated(name.trim().toLowerCase());
       setAddOpen(false);
       setName("");
+      setLocals([]);
     },
     onError,
   });
@@ -155,14 +159,14 @@ export default function DomainsPage() {
   return (
     <Stack>
       <Group justify="space-between">
-        <Title order={3}>Domains & mailboxes</Title>
+        <Title order={3}>Domains</Title>
         <Button leftSection={<IconPlus size={16} />} onClick={() => setAddOpen(true)}>
           Add domain
         </Button>
       </Group>
       <Alert variant="light" title="Cloudflare setup">
         <Text size="sm" mb="xs">
-          This page only registers domains and mailboxes. To enable Email Sending / Email Routing and create the inbound routing rules, run this locally (rules are created for the mailboxes listed here):
+          Manage receiving mailboxes, allowed senders, quotas and templates here. Cloudflare DNS setup is separate; the command below uses only the mailboxes you have configured:
         </Text>
         <Cmd cmd={`node scripts/onboard-domain.mjs ${created ?? "<domain>"}`} />
       </Alert>
@@ -171,12 +175,13 @@ export default function DomainsPage() {
           Registered {created}. Run the command above to finish the Cloudflare setup; until then it can neither receive nor send mail.
         </Alert>
       )}
-      <Table.ScrollContainer minWidth={560}>
+      <Table.ScrollContainer minWidth={900}>
         <Table>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Domain</Table.Th>
               <Table.Th>Mailboxes</Table.Th>
+              <Table.Th>API sending</Table.Th>
               <Table.Th />
             </Table.Tr>
           </Table.Thead>
@@ -218,7 +223,15 @@ export default function DomainsPage() {
                   </Stack>
                 </Table.Td>
                 <Table.Td valign="top">
+                  <Stack gap={4}>
+                    <Badge size="sm" color={d.status === "active" ? "green" : "gray"}>{d.status === "active" ? "Allowed" : "Disabled"}</Badge>
+                    <Text size="xs" c="dimmed">{d.sent_today} sent today · quota {d.daily_quota}</Text>
+                    <Text size="xs" c="dimmed">{d.senders.length} allowed sender(s)</Text>
+                  </Stack>
+                </Table.Td>
+                <Table.Td valign="top">
                   <Group gap="xs" wrap="nowrap">
+                    <Button size="compact-sm" variant="light" onClick={() => setSendingId(d.id)}>Sending settings</Button>
                     <Button size="compact-sm" variant="light" onClick={() => setBoxFor(d)}>
                       Add mailbox
                     </Button>
@@ -235,11 +248,13 @@ export default function DomainsPage() {
         </Table>
       </Table.ScrollContainer>
 
+      {sendingDomain && <DomainSendingDrawer key={sendingDomain.id} domain={sendingDomain} onClose={() => setSendingId(null)} />}
+      {domains.error && <Alert color="red">{domains.error.message}</Alert>}
       <Modal opened={addOpen} onClose={() => setAddOpen(false)} title="Add domain">
         <Stack>
           <TextInput label="Domain" placeholder="example.com" value={name} onChange={(e) => setName(e.currentTarget.value)} />
           <DomainCheckNotice name={name} onBlocking={onBlocking} />
-          <TagsInput label="Initial mailboxes" description="Press Enter to add" value={locals} onChange={setLocals} />
+          <TagsInput label="Initial mailboxes" description="Optional. Enter only the mailbox names you want to create." value={locals} onChange={setLocals} />
           <Button loading={addDomain.isPending} disabled={blocking} onClick={() => addDomain.mutate()}>
             Add
           </Button>
